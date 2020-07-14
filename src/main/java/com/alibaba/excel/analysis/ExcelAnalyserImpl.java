@@ -1,7 +1,9 @@
 package com.alibaba.excel.analysis;
 
 import java.io.InputStream;
+import java.util.List;
 
+import org.apache.poi.hssf.record.crypto.Biff8EncryptionKey;
 import org.apache.poi.poifs.crypt.Decryptor;
 import org.apache.poi.poifs.filesystem.DocumentFactoryHelper;
 import org.apache.poi.poifs.filesystem.POIFSFileSystem;
@@ -12,14 +14,23 @@ import org.slf4j.LoggerFactory;
 import com.alibaba.excel.analysis.v03.XlsSaxAnalyser;
 import com.alibaba.excel.analysis.v07.XlsxSaxAnalyser;
 import com.alibaba.excel.context.AnalysisContext;
-import com.alibaba.excel.context.AnalysisContextImpl;
+import com.alibaba.excel.context.xls.DefaultXlsReadContext;
+import com.alibaba.excel.context.xls.XlsReadContext;
+import com.alibaba.excel.context.xlsx.DefaultXlsxReadContext;
+import com.alibaba.excel.context.xlsx.XlsxReadContext;
 import com.alibaba.excel.exception.ExcelAnalysisException;
 import com.alibaba.excel.exception.ExcelAnalysisStopException;
 import com.alibaba.excel.read.metadata.ReadSheet;
 import com.alibaba.excel.read.metadata.ReadWorkbook;
 import com.alibaba.excel.read.metadata.holder.ReadWorkbookHolder;
+import com.alibaba.excel.read.metadata.holder.xls.XlsReadWorkbookHolder;
+import com.alibaba.excel.read.metadata.holder.xlsx.XlsxReadWorkbookHolder;
 import com.alibaba.excel.support.ExcelTypeEnum;
+import com.alibaba.excel.util.CollectionUtils;
+import com.alibaba.excel.util.DateUtils;
 import com.alibaba.excel.util.FileUtils;
+import com.alibaba.excel.util.NumberDataFormatterUtils;
+import com.alibaba.excel.util.StringUtils;
 
 /**
  * @author jipengfei
@@ -29,12 +40,15 @@ public class ExcelAnalyserImpl implements ExcelAnalyser {
 
     private AnalysisContext analysisContext;
 
-    private ExcelExecutor excelExecutor;
+    private ExcelReadExecutor excelReadExecutor;
+    /**
+     * Prevent multiple shutdowns
+     */
+    private boolean finished = false;
 
     public ExcelAnalyserImpl(ReadWorkbook readWorkbook) {
         try {
-            analysisContext = new AnalysisContextImpl(readWorkbook);
-            choiceExcelExecutor();
+            choiceExcelExecutor(readWorkbook);
         } catch (RuntimeException e) {
             finish();
             throw e;
@@ -44,28 +58,25 @@ public class ExcelAnalyserImpl implements ExcelAnalyser {
         }
     }
 
-    private void choiceExcelExecutor() throws Exception {
-        ReadWorkbookHolder readWorkbookHolder = analysisContext.readWorkbookHolder();
-        ExcelTypeEnum excelType = readWorkbookHolder.getExcelType();
-        if (excelType == null) {
-            excelExecutor = new XlsxSaxAnalyser(analysisContext, null);
-            return;
-        }
+    private void choiceExcelExecutor(ReadWorkbook readWorkbook) throws Exception {
+        ExcelTypeEnum excelType = ExcelTypeEnum.valueOf(readWorkbook);
         switch (excelType) {
             case XLS:
-                POIFSFileSystem poifsFileSystem = null;
-                if (readWorkbookHolder.getFile() != null) {
-                    poifsFileSystem = new POIFSFileSystem(readWorkbookHolder.getFile());
+                POIFSFileSystem poifsFileSystem;
+                if (readWorkbook.getFile() != null) {
+                    poifsFileSystem = new POIFSFileSystem(readWorkbook.getFile());
                 } else {
-                    poifsFileSystem = new POIFSFileSystem(readWorkbookHolder.getInputStream());
+                    poifsFileSystem = new POIFSFileSystem(readWorkbook.getInputStream());
                 }
                 // So in encrypted excel, it looks like XLS but it's actually XLSX
                 if (poifsFileSystem.getRoot().hasEntry(Decryptor.DEFAULT_POIFS_ENTRY)) {
                     InputStream decryptedStream = null;
                     try {
-                        decryptedStream =
-                            DocumentFactoryHelper.getDecryptedStream(poifsFileSystem.getRoot().getFileSystem(), null);
-                        excelExecutor = new XlsxSaxAnalyser(analysisContext, decryptedStream);
+                        decryptedStream = DocumentFactoryHelper
+                            .getDecryptedStream(poifsFileSystem.getRoot().getFileSystem(), readWorkbook.getPassword());
+                        XlsxReadContext xlsxReadContext = new DefaultXlsxReadContext(readWorkbook, ExcelTypeEnum.XLSX);
+                        analysisContext = xlsxReadContext;
+                        excelReadExecutor = new XlsxSaxAnalyser(xlsxReadContext, decryptedStream);
                         return;
                     } finally {
                         IOUtils.closeQuietly(decryptedStream);
@@ -74,27 +85,39 @@ public class ExcelAnalyserImpl implements ExcelAnalyser {
                         poifsFileSystem.close();
                     }
                 }
-                excelExecutor = new XlsSaxAnalyser(analysisContext, poifsFileSystem);
+                if (readWorkbook.getPassword() != null) {
+                    Biff8EncryptionKey.setCurrentUserPassword(readWorkbook.getPassword());
+                }
+                XlsReadContext xlsReadContext = new DefaultXlsReadContext(readWorkbook, ExcelTypeEnum.XLS);
+                xlsReadContext.xlsReadWorkbookHolder().setPoifsFileSystem(poifsFileSystem);
+                analysisContext = xlsReadContext;
+                excelReadExecutor = new XlsSaxAnalyser(xlsReadContext);
                 break;
             case XLSX:
-                excelExecutor = new XlsxSaxAnalyser(analysisContext, null);
+                XlsxReadContext xlsxReadContext = new DefaultXlsxReadContext(readWorkbook, ExcelTypeEnum.XLSX);
+                analysisContext = xlsxReadContext;
+                excelReadExecutor = new XlsxSaxAnalyser(xlsxReadContext, null);
                 break;
             default:
+                break;
         }
     }
 
     @Override
-    public void analysis(ReadSheet readSheet) {
+    public void analysis(List<ReadSheet> readSheetList, Boolean readAll) {
         try {
-            analysisContext.currentSheet(excelExecutor, readSheet);
+            if (!readAll && CollectionUtils.isEmpty(readSheetList)) {
+                throw new IllegalArgumentException("Specify at least one read sheet.");
+            }
+            analysisContext.readWorkbookHolder().setParameterSheetDataList(readSheetList);
+            analysisContext.readWorkbookHolder().setReadAll(readAll);
             try {
-                excelExecutor.execute();
+                excelReadExecutor.execute();
             } catch (ExcelAnalysisStopException e) {
                 if (LOGGER.isDebugEnabled()) {
                     LOGGER.debug("Custom stop!");
                 }
             }
-            analysisContext.readSheetHolder().notifyAfterAllAnalysed(analysisContext);
         } catch (RuntimeException e) {
             finish();
             throw e;
@@ -106,30 +129,39 @@ public class ExcelAnalyserImpl implements ExcelAnalyser {
 
     @Override
     public void finish() {
+        if (finished) {
+            return;
+        }
+        finished = true;
         if (analysisContext == null || analysisContext.readWorkbookHolder() == null) {
             return;
         }
         ReadWorkbookHolder readWorkbookHolder = analysisContext.readWorkbookHolder();
+
+        Throwable throwable = null;
+
         try {
             if (readWorkbookHolder.getReadCache() != null) {
                 readWorkbookHolder.getReadCache().destroy();
             }
         } catch (Throwable t) {
-            throwCanNotCloseIo(t);
+            throwable = t;
         }
         try {
-            if (readWorkbookHolder.getOpcPackage() != null) {
-                readWorkbookHolder.getOpcPackage().close();
+            if ((readWorkbookHolder instanceof XlsxReadWorkbookHolder)
+                && ((XlsxReadWorkbookHolder)readWorkbookHolder).getOpcPackage() != null) {
+                ((XlsxReadWorkbookHolder)readWorkbookHolder).getOpcPackage().revert();
             }
         } catch (Throwable t) {
-            throwCanNotCloseIo(t);
+            throwable = t;
         }
         try {
-            if (readWorkbookHolder.getPoifsFileSystem() != null) {
-                readWorkbookHolder.getPoifsFileSystem().close();
+            if ((readWorkbookHolder instanceof XlsReadWorkbookHolder)
+                && ((XlsReadWorkbookHolder)readWorkbookHolder).getPoifsFileSystem() != null) {
+                ((XlsReadWorkbookHolder)readWorkbookHolder).getPoifsFileSystem().close();
             }
         } catch (Throwable t) {
-            throwCanNotCloseIo(t);
+            throwable = t;
         }
         try {
             if (analysisContext.readWorkbookHolder().getAutoCloseStream()
@@ -137,24 +169,41 @@ public class ExcelAnalyserImpl implements ExcelAnalyser {
                 readWorkbookHolder.getInputStream().close();
             }
         } catch (Throwable t) {
-            throwCanNotCloseIo(t);
+            throwable = t;
         }
         try {
             if (readWorkbookHolder.getTempFile() != null) {
                 FileUtils.delete(readWorkbookHolder.getTempFile());
             }
         } catch (Throwable t) {
-            throwCanNotCloseIo(t);
+            throwable = t;
+        }
+
+        clearEncrypt03();
+
+        removeThreadLocalCache();
+
+        if (throwable != null) {
+            throw new ExcelAnalysisException("Can not close IO.", throwable);
         }
     }
 
-    private void throwCanNotCloseIo(Throwable t) {
-        throw new ExcelAnalysisException("Can not close IO", t);
+    private void removeThreadLocalCache() {
+        NumberDataFormatterUtils.removeThreadLocalCache();
+        DateUtils.removeThreadLocalCache();
+    }
+
+    private void clearEncrypt03() {
+        if (StringUtils.isEmpty(analysisContext.readWorkbookHolder().getPassword())
+            || !ExcelTypeEnum.XLS.equals(analysisContext.readWorkbookHolder().getExcelType())) {
+            return;
+        }
+        Biff8EncryptionKey.setCurrentUserPassword(null);
     }
 
     @Override
-    public com.alibaba.excel.analysis.ExcelExecutor excelExecutor() {
-        return excelExecutor;
+    public ExcelReadExecutor excelExecutor() {
+        return excelReadExecutor;
     }
 
     @Override

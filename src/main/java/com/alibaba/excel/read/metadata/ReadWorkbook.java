@@ -2,10 +2,16 @@ package com.alibaba.excel.read.metadata;
 
 import java.io.File;
 import java.io.InputStream;
+import java.util.Set;
+
+import javax.xml.parsers.SAXParserFactory;
 
 import com.alibaba.excel.cache.ReadCache;
+import com.alibaba.excel.cache.selector.ReadCacheSelector;
 import com.alibaba.excel.context.AnalysisContext;
+import com.alibaba.excel.enums.CellExtraTypeEnum;
 import com.alibaba.excel.event.AnalysisEventListener;
+import com.alibaba.excel.read.listener.ModelBuildEventListener;
 import com.alibaba.excel.support.ExcelTypeEnum;
 
 /**
@@ -47,9 +53,44 @@ public class ReadWorkbook extends ReadBasicParameter {
      */
     private Object customObject;
     /**
-     * A cache that stores temp data to save memory.Default use {@link com.alibaba.excel.cache.Ehcache}
+     * A cache that stores temp data to save memory.
      */
     private ReadCache readCache;
+    /**
+     * Ignore empty rows.Default is true.
+     */
+    private Boolean ignoreEmptyRow;
+    /**
+     * Select the cache.Default use {@link com.alibaba.excel.cache.selector.SimpleReadCacheSelector}
+     */
+    private ReadCacheSelector readCacheSelector;
+    /**
+     * Whether the encryption
+     */
+    private String password;
+    /**
+     * SAXParserFactory used when reading xlsx.
+     * <p>
+     * The default will automatically find.
+     * <p>
+     * Please pass in the name of a class ,like : "com.sun.org.apache.xerces.internal.jaxp.SAXParserFactoryImpl"
+     *
+     * @see SAXParserFactory#newInstance()
+     * @see SAXParserFactory#newInstance(String, ClassLoader)
+     */
+    private String xlsxSAXParserFactoryName;
+    /**
+     * Whether to use the default listener, which is used by default.
+     * <p>
+     * The {@link ModelBuildEventListener} is loaded by default to convert the object.
+     */
+    private Boolean useDefaultListener;
+    /**
+     * Read some additional fields. None are read by default.
+     *
+     * @see CellExtraTypeEnum
+     */
+    private Set<CellExtraTypeEnum> extraReadSet;
     /**
      * The default is all excel objects.Default is true.
      * <p>
@@ -138,5 +179,53 @@ public class ReadWorkbook extends ReadBasicParameter {
 
     public void setDefaultReturnMap(Boolean defaultReturnMap) {
         this.defaultReturnMap = defaultReturnMap;
+    }
+
+    public Boolean getIgnoreEmptyRow() {
+        return ignoreEmptyRow;
+    }
+
+    public void setIgnoreEmptyRow(Boolean ignoreEmptyRow) {
+        this.ignoreEmptyRow = ignoreEmptyRow;
+    }
+
+    public ReadCacheSelector getReadCacheSelector() {
+        return readCacheSelector;
+    }
+
+    public void setReadCacheSelector(ReadCacheSelector readCacheSelector) {
+        this.readCacheSelector = readCacheSelector;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public String getXlsxSAXParserFactoryName() {
+        return xlsxSAXParserFactoryName;
+    }
+
+    public void setXlsxSAXParserFactoryName(String xlsxSAXParserFactoryName) {
+        this.xlsxSAXParserFactoryName = xlsxSAXParserFactoryName;
+    }
+
+    public Boolean getUseDefaultListener() {
+        return useDefaultListener;
+    }
+
+    public void setUseDefaultListener(Boolean useDefaultListener) {
+        this.useDefaultListener = useDefaultListener;
+    }
+
+    public Set<CellExtraTypeEnum> getExtraReadSet() {
+        return extraReadSet;
+    }
+
+    public void setExtraReadSet(Set<CellExtraTypeEnum> extraReadSet) {
+        this.extraReadSet = extraReadSet;
     }
 }

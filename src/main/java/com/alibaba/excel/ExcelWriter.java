@@ -5,6 +5,10 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.alibaba.excel.context.WriteContext;
 import com.alibaba.excel.metadata.Sheet;
 import com.alibaba.excel.metadata.Table;
 import com.alibaba.excel.parameter.GenerateParam;
@@ -16,6 +20,7 @@ import com.alibaba.excel.write.merge.OnceAbsoluteMergeStrategy;
 import com.alibaba.excel.write.metadata.WriteSheet;
 import com.alibaba.excel.write.metadata.WriteTable;
 import com.alibaba.excel.write.metadata.WriteWorkbook;
+import com.alibaba.excel.write.metadata.fill.FillConfig;
 
 /**
  * Excel Writer This tool is used to write value out to Excel via POI. This object can perform the following two
@@ -29,6 +34,8 @@ import com.alibaba.excel.write.metadata.WriteWorkbook;
  * @author jipengfei
  */
 public class ExcelWriter {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExcelWriter.class);
+
     private ExcelBuilder excelBuilder;
 
     /**
@@ -152,6 +159,30 @@ public class ExcelWriter {
      */
     public ExcelWriter write(List data, WriteSheet writeSheet, WriteTable writeTable) {
         excelBuilder.addContent(data, writeSheet, writeTable);
+        return this;
+    }
+
+    /**
+     * Fill value to a sheet
+     *
+     * @param data
+     * @param writeSheet
+     * @return
+     */
+    public ExcelWriter fill(Object data, WriteSheet writeSheet) {
+        return fill(data, null, writeSheet);
+    }
+
+    /**
+     * Fill value to a sheet
+     *
+     * @param data
+     * @param fillConfig
+     * @param writeSheet
+     * @return
+     */
+    public ExcelWriter fill(Object data, FillConfig fillConfig, WriteSheet writeSheet) {
+        excelBuilder.fill(data, fillConfig, writeSheet);
         return this;
     }
 
@@ -294,7 +325,30 @@ public class ExcelWriter {
      * Close IO
      */
     public void finish() {
-        excelBuilder.finish();
+        if (excelBuilder != null) {
+            excelBuilder.finish(false);
+        }
     }
 
+    /**
+     * Prevents calls to {@link #finish} from freeing the cache
+     *
+     */
+    @Override
+    protected void finalize() {
+        try {
+            finish();
+        } catch (Throwable e) {
+            LOGGER.warn("Destroy object failed", e);
+        }
+    }
+
+    /**
+     * The context of the entire writing process
+     *
+     * @return
+     */
+    public WriteContext writeContext() {
+        return excelBuilder.writeContext();
+    }
 }

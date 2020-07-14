@@ -1,12 +1,11 @@
 package com.alibaba.excel.context;
 
 import java.io.InputStream;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.alibaba.excel.analysis.ExcelExecutor;
-import com.alibaba.excel.analysis.v07.XlsxSaxAnalyser;
 import com.alibaba.excel.exception.ExcelAnalysisException;
 import com.alibaba.excel.metadata.Sheet;
 import com.alibaba.excel.read.metadata.ReadSheet;
@@ -15,8 +14,13 @@ import com.alibaba.excel.read.metadata.holder.ReadHolder;
 import com.alibaba.excel.read.metadata.holder.ReadRowHolder;
 import com.alibaba.excel.read.metadata.holder.ReadSheetHolder;
 import com.alibaba.excel.read.metadata.holder.ReadWorkbookHolder;
+import com.alibaba.excel.read.metadata.holder.xls.XlsReadSheetHolder;
+import com.alibaba.excel.read.metadata.holder.xls.XlsReadWorkbookHolder;
+import com.alibaba.excel.read.metadata.holder.xlsx.XlsxReadSheetHolder;
+import com.alibaba.excel.read.metadata.holder.xlsx.XlsxReadWorkbookHolder;
+import com.alibaba.excel.read.processor.AnalysisEventProcessor;
+import com.alibaba.excel.read.processor.DefaultAnalysisEventProcessor;
 import com.alibaba.excel.support.ExcelTypeEnum;
-import com.alibaba.excel.util.StringUtils;
 
 /**
  *
@@ -40,26 +44,45 @@ public class AnalysisContextImpl implements AnalysisContext {
      * Configuration of currently operated cell
      */
     private ReadHolder currentReadHolder;
+    /**
+     * Event processor
+     */
+    private AnalysisEventProcessor analysisEventProcessor;
 
-    public AnalysisContextImpl(ReadWorkbook readWorkbook) {
+    public AnalysisContextImpl(ReadWorkbook readWorkbook, ExcelTypeEnum actualExcelType) {
         if (readWorkbook == null) {
             throw new IllegalArgumentException("Workbook argument cannot be null");
         }
-        readWorkbookHolder = new ReadWorkbookHolder(readWorkbook);
+        switch (actualExcelType) {
+            case XLS:
+                readWorkbookHolder = new XlsReadWorkbookHolder(readWorkbook);
+                break;
+            case XLSX:
+                readWorkbookHolder = new XlsxReadWorkbookHolder(readWorkbook);
+                break;
+            default:
+                break;
+        }
         currentReadHolder = readWorkbookHolder;
+        analysisEventProcessor = new DefaultAnalysisEventProcessor();
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Initialization 'AnalysisContextImpl' complete");
         }
     }
 
     @Override
-    public void currentSheet(ExcelExecutor excelExecutor, ReadSheet readSheet) {
-        if (readSheet == null) {
-            throw new IllegalArgumentException("Sheet argument cannot be null.");
+    public void currentSheet(ReadSheet readSheet) {
+        switch (readWorkbookHolder.getExcelType()) {
+            case XLS:
+                readSheetHolder = new XlsReadSheetHolder(readSheet, readWorkbookHolder);
+                break;
+            case XLSX:
+                readSheetHolder = new XlsxReadSheetHolder(readSheet, readWorkbookHolder);
+                break;
+            default:
+                break;
         }
-        readSheetHolder = new ReadSheetHolder(readSheet, readWorkbookHolder);
         currentReadHolder = readSheetHolder;
-        selectSheet(excelExecutor);
         if (readWorkbookHolder.getHasReadSheet().contains(readSheetHolder.getSheetNo())) {
             throw new ExcelAnalysisException("Cannot read sheet repeatedly.");
         }
@@ -67,54 +90,6 @@ public class AnalysisContextImpl implements AnalysisContext {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("Began to read：{}", readSheetHolder);
         }
-    }
-
-    private void selectSheet(ExcelExecutor excelExecutor) {
-        if (excelExecutor instanceof XlsxSaxAnalyser) {
-            selectSheet07(excelExecutor);
-        } else {
-            selectSheet03();
-        }
-    }
-
-    private void selectSheet03() {
-        if (readSheetHolder.getSheetNo() != null && readSheetHolder.getSheetNo() >= 0) {
-            return;
-        }
-        if (!StringUtils.isEmpty(readSheetHolder.getSheetName())) {
-            LOGGER.warn("Excel 2003 does not support matching sheets by name, defaults to the first one.");
-        }
-        readSheetHolder.setSheetNo(0);
-    }
-
-    private void selectSheet07(ExcelExecutor excelExecutor) {
-        if (readSheetHolder.getSheetNo() != null && readSheetHolder.getSheetNo() >= 0) {
-            for (ReadSheet readSheetExcel : excelExecutor.sheetList()) {
-                if (readSheetExcel.getSheetNo().equals(readSheetHolder.getSheetNo())) {
-                    readSheetHolder.setSheetName(readSheetExcel.getSheetName());
-                    return;
-                }
-            }
-            throw new ExcelAnalysisException("Can not find sheet:" + readSheetHolder.getSheetNo());
-        }
-        if (!StringUtils.isEmpty(readSheetHolder.getSheetName())) {
-            for (ReadSheet readSheetExcel : excelExecutor.sheetList()) {
-                String sheetName = readSheetExcel.getSheetName();
-                if (sheetName == null) {
-                    continue;
-                }
-                if (readSheetHolder.globalConfiguration().getAutoTrim()) {
-                    sheetName = sheetName.trim();
-                }
-                if (sheetName.equals(readSheetHolder.getSheetName())) {
-                    readSheetHolder.setSheetNo(readSheetExcel.getSheetNo());
-                    return;
-                }
-            }
-        }
-        ReadSheet readSheetExcel = excelExecutor.sheetList().get(0);
-        readSheetHolder.setSheetNo(readSheetExcel.getSheetNo());
-        readSheetHolder.setSheetName(readSheetExcel.getSheetName());
     }
 
     @Override
@@ -145,6 +120,21 @@ public class AnalysisContextImpl implements AnalysisContext {
     @Override
     public Object getCustom() {
         return readWorkbookHolder.getCustomObject();
+    }
+
+    @Override
+    public AnalysisEventProcessor analysisEventProcessor() {
+        return analysisEventProcessor;
+    }
+
+    @Override
+    public List<ReadSheet> readSheetList() {
+        return null;
+    }
+
+    @Override
+    public void readSheetList(List<ReadSheet> readSheetList) {
+
     }
 
     @Override

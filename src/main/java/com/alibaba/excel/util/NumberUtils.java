@@ -26,7 +26,11 @@ public class NumberUtils {
     public static String format(Number num, ExcelContentProperty contentProperty) {
         if (contentProperty == null || contentProperty.getNumberFormatProperty() == null
             || StringUtils.isEmpty(contentProperty.getNumberFormatProperty().getFormat())) {
-            return num.toString();
+            if (num instanceof BigDecimal) {
+                return ((BigDecimal)num).toPlainString();
+            } else {
+                return num.toString();
+            }
         }
         String format = contentProperty.getNumberFormatProperty().getFormat();
         RoundingMode roundingMode = contentProperty.getNumberFormatProperty().getRoundingMode();
@@ -163,6 +167,7 @@ public class NumberUtils {
         RoundingMode roundingMode = contentProperty.getNumberFormatProperty().getRoundingMode();
         DecimalFormat decimalFormat = new DecimalFormat(format);
         decimalFormat.setRoundingMode(roundingMode);
+        decimalFormat.setParseBigDecimal(true);
         return decimalFormat.parse(string);
     }
 }

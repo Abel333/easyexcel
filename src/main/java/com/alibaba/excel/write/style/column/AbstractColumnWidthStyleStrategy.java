@@ -1,12 +1,13 @@
 package com.alibaba.excel.write.style.column;
 
+import java.util.List;
+
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Row;
 
 import com.alibaba.excel.event.NotRepeatExecutor;
 import com.alibaba.excel.metadata.CellData;
 import com.alibaba.excel.metadata.Head;
-import com.alibaba.excel.write.handler.CellWriteHandler;
+import com.alibaba.excel.write.handler.AbstractCellWriteHandler;
 import com.alibaba.excel.write.metadata.holder.WriteSheetHolder;
 import com.alibaba.excel.write.metadata.holder.WriteTableHolder;
 
@@ -15,7 +16,7 @@ import com.alibaba.excel.write.metadata.holder.WriteTableHolder;
  *
  * @author Jiaju Zhuang
  */
-public abstract class AbstractColumnWidthStyleStrategy implements CellWriteHandler, NotRepeatExecutor {
+public abstract class AbstractColumnWidthStyleStrategy extends AbstractCellWriteHandler implements NotRepeatExecutor {
 
     @Override
     public String uniqueValue() {
@@ -23,28 +24,22 @@ public abstract class AbstractColumnWidthStyleStrategy implements CellWriteHandl
     }
 
     @Override
-    public void beforeCellCreate(WriteSheetHolder writeSheetHolder, WriteTableHolder writeTableHolder, Row row,
-        Head head, int relativeRowIndex, boolean isHead) {
-
-    }
-
-    @Override
-    public void afterCellCreate(WriteSheetHolder writeSheetHolder, WriteTableHolder writeTableHolder, CellData cellData,
-        Cell cell, Head head, int relativeRowIndex, boolean isHead) {
-        setColumnWidth(writeSheetHolder, cellData, cell, head, relativeRowIndex, isHead);
+    public void afterCellDispose(WriteSheetHolder writeSheetHolder, WriteTableHolder writeTableHolder,
+        List<CellData> cellDataList, Cell cell, Head head, Integer relativeRowIndex, Boolean isHead) {
+        setColumnWidth(writeSheetHolder, cellDataList, cell, head, relativeRowIndex, isHead);
     }
 
     /**
      * Sets the column width when head create
      *
      * @param writeSheetHolder
-     * @param cellData
+     * @param cellDataList
      * @param cell
      * @param head
      * @param relativeRowIndex
      * @param isHead
      */
-    protected abstract void setColumnWidth(WriteSheetHolder writeSheetHolder, CellData cellData, Cell cell, Head head,
-        int relativeRowIndex, boolean isHead);
+    protected abstract void setColumnWidth(WriteSheetHolder writeSheetHolder, List<CellData> cellDataList, Cell cell,
+        Head head, Integer relativeRowIndex, Boolean isHead);
 
 }
